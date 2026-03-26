@@ -1,0 +1,50 @@
+experiment_name: sft_cot
+seed: 42
+
+data:
+  path: data/train_cot.jsonl
+  sample_size: null
+  val_ratio: 0.0
+  prompt_field: prompt
+  answer_field: answer
+  reasoning_field: reasoning
+  instruction_suffix: Put your final answer inside \boxed{}.
+
+model:
+  source: kagglehub
+  model_name_or_path: metric/nemotron-3-nano-30b-a3b-bf16/transformers/default
+  trust_remote_code: true
+  torch_dtype: bfloat16
+  device_map: auto
+
+runtime:
+  install_import_stubs: true
+  disable_fast_path: true
+  skip_model_load_in_dry_run: true
+
+lora:
+  r: 32
+  alpha: 16
+  dropout: 0.05
+  target_modules: all-linear
+  bias: none
+
+training:
+  output_dir: output/sft_cot
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 4
+  num_train_epochs: 2
+  learning_rate: 2.0e-4
+  logging_steps: 5
+  bf16: true
+  fp16: false
+  max_grad_norm: 1.0
+  optim: adamw_torch
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.1
+  save_strategy: "no"
+  report_to: none
+  max_length: 2048
+  packing: false
+  gradient_checkpointing: true
+  gradient_checkpointing_use_reentrant: true
