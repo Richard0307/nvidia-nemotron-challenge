@@ -76,7 +76,11 @@ def extract_boxed_answer(text: str) -> str | None:
 
 
 def normalize_answer(text: str) -> str:
-    return " ".join(str(text).strip().split())
+    text = str(text).strip()
+    # Strip LaTeX space escapes: "\ " → " ", then remove stray backslashes
+    text = re.sub(r"\\ ", " ", text)
+    text = text.replace("\\", "")
+    return " ".join(text.split())
 
 
 def answers_match(expected: str, predicted: str | None) -> bool:
@@ -105,15 +109,18 @@ def call_chat_completion(
     user_prompt: str,
 ) -> str:
     url = f"{base_url.rstrip('/')}/chat/completions"
+    is_o_series = re.match(r"^o\d", model) is not None
+    tokens_key = "max_completion_tokens" if is_o_series else "max_tokens"
     payload = {
         "model": model,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
+        tokens_key: max_tokens,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
     }
+    if not is_o_series:
+        payload["temperature"] = temperature
 
     req = request.Request(
         url,
@@ -128,7 +135,14 @@ def call_chat_completion(
     with request.urlopen(req, timeout=timeout_seconds) as response:
         data = json.loads(response.read().decode("utf-8"))
 
-    return data["choices"][0]["message"]["content"]
+    message = data["choices"][0]["message"]
+    # o-series reasoning models may return content as None; fall back to empty string
+    content = message.get("content") or ""
+    if not content:
+        # Print raw message for debugging
+        print(f"    [DEBUG] raw message keys: {list(message.keys())}")
+        print(f"    [DEBUG] raw message: {str(message)[:500]}")
+    return content
 
 
 def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -206,9 +220,11 @@ def main() -> int:
             print(f"[{index}] accepted")
         else:
             rejected += 1
+            preview = content[:300].replace("\n", " ") if content else "(empty)"
             print(
                 f"[{index}] rejected | expected={ground_truth!r} | predicted={boxed_answer!r}"
             )
+            print(f"    model output preview: {preview}")
 
         if args.sleep_seconds > 0:
             time.sleep(args.sleep_seconds)
